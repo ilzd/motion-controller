@@ -1,0 +1,65 @@
+name: "Basic Movement Demo"
+description: "Simple WASD movement with hand gestures"
+game: "Generic Game"
+gestures:
+  - name: "Walk Forward"
+    trigger:
+      type: "body_lean"
+      params:
+        direction: "forward"
+        threshold: 10
+    action:
+      type: "keyboard"
+      params:
+        key: "w"
+        mode: "hold"
+  
+  - name: "Walk Backward"
+    trigger:
+      type: "body_lean"
+      params:
+        direction: "back"
+        threshold: 10
+    action:
+      type: "keyboard"
+      params:
+        key: "s"
+        mode: "hold"
+  
+  - name: "Strafe Left"
+    trigger:
+      type: "body_lean"
+      params:
+        direction: "left"
+        threshold: 15
+    action:
+      type: "keyboard"
+      params:
+        key: "a"
+        mode: "hold"
+  
+  - name: "Strafe Right"
+    trigger:
+      type: "body_lean"
+      params:
+        direction: "right"
+        threshold: 15
+    action:
+      type: "keyboard"
+      params:
+        key: "d"
+        mode: "hold"
+  
+  - name: "Jump"
+    trigger:
+      type: "hand_raise"
+      params:
+        hand: "both"
+        threshold: 0.3
+    action:
+      type: "keyboard"
+      params:
+        key: "space"
+        mode: "press"
+
+
