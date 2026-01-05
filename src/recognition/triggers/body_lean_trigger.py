@@ -93,8 +93,6 @@ class BodyLeanTrigger(BaseTrigger):
         elif self.direction == "forward" or self.direction == "back":
             # Improved forward/backward detection using angle from vertical
             # Calculate angle between shoulder-hip line and vertical
-            from src.utils.math_utils import calculate_lean_angle
-            
             # For forward/back, we need to look at the angle in the Y-Z plane
             # Use the vertical distance (Y) and depth (Z) to calculate lean angle
             shoulder_y_avg = (left_shoulder[1] + right_shoulder[1]) / 2

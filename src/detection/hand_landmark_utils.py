@@ -106,3 +106,4 @@ def calculate_finger_extension(hand_landmarks: object, finger: str) -> Optional[
         return None
 
 
+

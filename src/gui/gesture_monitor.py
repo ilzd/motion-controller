@@ -92,19 +92,25 @@ class GestureMonitor(QWidget):
             if gesture_name in self.gesture_rows:
                 row = self.gesture_rows[gesture_name]
                 
+                # Validate row index
+                if row < 0 or row >= self.table.rowCount():
+                    continue
+                
                 status_item = self.table.item(row, 1)
                 value_item = self.table.item(row, 2)
                 
-                if is_active:
-                    status_item.setText("Active")
-                    status_item.setBackground(QColor(100, 255, 100))
-                else:
-                    status_item.setText("Inactive")
-                    status_item.setBackground(QColor(200, 200, 200))
+                if status_item:
+                    if is_active:
+                        status_item.setText("Active")
+                        status_item.setBackground(QColor(100, 255, 100))
+                    else:
+                        status_item.setText("Inactive")
+                        status_item.setBackground(QColor(200, 200, 200))
                 
-                # Update value
-                value_percent = int(trigger_value * 100)
-                value_item.setText(f"{value_percent}%")
+                if value_item:
+                    # Update value
+                    value_percent = int(trigger_value * 100)
+                    value_item.setText(f"{value_percent}%")
     
     def clear(self):
         """Clear all gesture data"""

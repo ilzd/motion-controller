@@ -144,7 +144,7 @@ class GestureEditorDialog(QDialog):
         button_layout = QHBoxLayout()
         
         save_button = QPushButton("Save")
-        save_button.clicked.connect(self.accept)
+        save_button.clicked.connect(self.validate_and_accept)
         button_layout.addWidget(save_button)
         
         cancel_button = QPushButton("Cancel")
@@ -156,6 +156,25 @@ class GestureEditorDialog(QDialog):
         # Initialize parameter forms
         self.on_trigger_type_changed(self.trigger_type_combo.currentText())
         self.on_action_type_changed(self.action_type_combo.currentText())
+    
+    def validate_and_accept(self):
+        """Validate form data before accepting"""
+        try:
+            # Validate gesture name
+            gesture_name = self.name_input.text().strip()
+            if not gesture_name:
+                QMessageBox.warning(self, "Validation Error", "Gesture name cannot be empty.")
+                return
+            
+            # Try to get gesture to validate all fields
+            self.get_gesture()
+            
+            # If validation passes, accept the dialog
+            self.accept()
+        except ValueError as e:
+            QMessageBox.warning(self, "Validation Error", str(e))
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save gesture: {e}")
     
     def on_trigger_type_changed(self, trigger_type: str):
         """Handle trigger type change"""
@@ -176,6 +195,29 @@ class GestureEditorDialog(QDialog):
             self.add_trigger_param("hand", QComboBox(), ["right", "left", "both"])
             self.add_trigger_param("gesture", QComboBox(), ["open", "closed"])
             self.add_trigger_param("confidence", QDoubleSpinBox(), (0.0, 1.0, 0.7))
+        elif trigger_type == "arm_stretch":
+            self.add_trigger_param("arm", QComboBox(), ["right", "left", "both"])
+            self.add_trigger_param("direction", QComboBox(), ["up", "down", "left", "right", "forward", "back", "any"])
+            self.add_trigger_param("min_extension", QDoubleSpinBox(), (0.0, 1.0, 0.6))
+            self.add_trigger_param("angle_tolerance", QDoubleSpinBox(), (0.0, 90.0, 30.0))
+            self.add_trigger_param("min_speed", QDoubleSpinBox(), (0.0, 10.0, 0.0))
+        elif trigger_type == "leg_raise":
+            self.add_trigger_param("leg", QComboBox(), ["right", "left", "both"])
+            self.add_trigger_param("direction", QComboBox(), ["forward", "back", "up", "any"])
+            self.add_trigger_param("min_height", QDoubleSpinBox(), (0.0, 1.0, 0.15))
+            self.add_trigger_param("min_angle", QDoubleSpinBox(), (0.0, 180.0, 120.0))
+        elif trigger_type == "motion_speed":
+            body_parts = ["left_wrist", "right_wrist", "left_ankle", "right_ankle", 
+                          "left_knee", "right_knee", "nose", "left_shoulder", "right_shoulder",
+                          "left_hip", "right_hip"]
+            self.add_trigger_param("body_part", QComboBox(), body_parts)
+            self.add_trigger_param("min_speed", QDoubleSpinBox(), (0.0, 10.0, 0.5))
+            self.add_trigger_param("direction", QComboBox(), ["any", "up", "down", "left", "right", "forward", "back"])
+            self.add_trigger_param("smoothing", QSpinBox(), (1, 10, 3))
+        elif trigger_type == "pointing_gesture":
+            self.add_trigger_param("hand", QComboBox(), ["right", "left", "both"])
+            self.add_trigger_param("min_confidence", QDoubleSpinBox(), (0.0, 1.0, 0.7))
+            self.add_trigger_param("require_thumb", QCheckBox(), True)
         
         # Update content widget size
         self.update_content_size()
@@ -218,6 +260,8 @@ class GestureEditorDialog(QDialog):
             widget.setSingleStep(0.1)
         elif isinstance(widget, QLineEdit):
             widget.setText(str(default_value))
+        elif isinstance(widget, QCheckBox):
+            widget.setChecked(bool(default_value))
         
         self.trigger_params_layout.addRow(f"{name}:", widget)
     
@@ -242,16 +286,39 @@ class GestureEditorDialog(QDialog):
     
     def clear_layout(self, layout):
         """Clear all widgets from a layout"""
-        while layout.count():
-            item = layout.takeAt(0)
-            if item.widget():
-                widget = item.widget()
-                # Don't delete if it's a label or combo box that should stay
-                if not isinstance(widget, (QLabel, QComboBox)):
+        # Handle QFormLayout specially - need to remove rows properly
+        if isinstance(layout, QFormLayout):
+            # Remove rows from the end to avoid index shifting issues
+            while layout.rowCount() > 0:
+                row = layout.rowCount() - 1
+                # Get label item
+                label_item = layout.itemAt(row, QFormLayout.ItemRole.LabelRole)
+                if label_item:
+                    label_widget = label_item.widget()
+                    if label_widget:
+                        label_widget.setParent(None)
+                        label_widget.deleteLater()
+                # Get field item
+                field_item = layout.itemAt(row, QFormLayout.ItemRole.FieldRole)
+                if field_item:
+                    field_widget = field_item.widget()
+                    if field_widget:
+                        field_widget.setParent(None)
+                        field_widget.deleteLater()
+                # Remove the row
+                layout.removeRow(row)
+        else:
+            # For other layout types, remove items normally
+            while layout.count():
+                item = layout.takeAt(0)
+                if item.widget():
+                    widget = item.widget()
+                    widget.setParent(None)
                     widget.deleteLater()
-            elif item.layout():
-                # Recursively clear nested layouts
-                self.clear_layout(item.layout())
+                elif item.layout():
+                    # Recursively clear nested layouts
+                    self.clear_layout(item.layout())
+                    item.layout().setParent(None)
     
     def update_content_size(self):
         """Update the content widget size to fit its contents"""
@@ -299,37 +366,47 @@ class GestureEditorDialog(QDialog):
             
             # Set trigger parameters after layout is rebuilt
             for i in range(self.trigger_params_layout.rowCount()):
-                label = self.trigger_params_layout.itemAt(i, QFormLayout.ItemRole.LabelRole)
-                if label:
-                    param_name = label.widget().text().rstrip(':')
-                    widget = self.trigger_params_layout.itemAt(i, QFormLayout.ItemRole.FieldRole).widget()
-                    value = gesture.trigger.params.get(param_name)
-                    
-                    if isinstance(widget, QComboBox) and value:
-                        index = widget.findText(str(value))
-                        if index >= 0:
-                            widget.setCurrentIndex(index)
-                    elif isinstance(widget, (QSpinBox, QDoubleSpinBox)) and value is not None:
-                        widget.setValue(value)
-                    elif isinstance(widget, QLineEdit) and value:
-                        widget.setText(str(value))
+                label_item = self.trigger_params_layout.itemAt(i, QFormLayout.ItemRole.LabelRole)
+                if label_item and label_item.widget():
+                    param_name = label_item.widget().text().rstrip(':')
+                    field_item = self.trigger_params_layout.itemAt(i, QFormLayout.ItemRole.FieldRole)
+                    if field_item:
+                        widget = field_item.widget()
+                        if widget:
+                            value = gesture.trigger.params.get(param_name)
+                            
+                            if isinstance(widget, QComboBox) and value:
+                                index = widget.findText(str(value))
+                                if index >= 0:
+                                    widget.setCurrentIndex(index)
+                            elif isinstance(widget, (QSpinBox, QDoubleSpinBox)) and value is not None:
+                                widget.setValue(value)
+                            elif isinstance(widget, QLineEdit) and value:
+                                widget.setText(str(value))
+                            elif isinstance(widget, QCheckBox):
+                                widget.setChecked(bool(value))
             
             # Set action parameters after layout is rebuilt
             for i in range(self.action_params_layout.rowCount()):
-                label = self.action_params_layout.itemAt(i, QFormLayout.ItemRole.LabelRole)
-                if label:
-                    param_name = label.widget().text().rstrip(':')
-                    widget = self.action_params_layout.itemAt(i, QFormLayout.ItemRole.FieldRole).widget()
-                    value = gesture.action.params.get(param_name)
-                    
-                    if isinstance(widget, QComboBox) and value:
-                        index = widget.findText(str(value))
-                        if index >= 0:
-                            widget.setCurrentIndex(index)
-                    elif isinstance(widget, (QSpinBox, QDoubleSpinBox)) and value is not None:
-                        widget.setValue(value)
-                    elif isinstance(widget, QLineEdit) and value:
-                        widget.setText(str(value))
+                label_item = self.action_params_layout.itemAt(i, QFormLayout.ItemRole.LabelRole)
+                if label_item and label_item.widget():
+                    param_name = label_item.widget().text().rstrip(':')
+                    field_item = self.action_params_layout.itemAt(i, QFormLayout.ItemRole.FieldRole)
+                    if field_item:
+                        widget = field_item.widget()
+                        if widget:
+                            value = gesture.action.params.get(param_name)
+                            
+                            if isinstance(widget, QComboBox) and value:
+                                index = widget.findText(str(value))
+                                if index >= 0:
+                                    widget.setCurrentIndex(index)
+                            elif isinstance(widget, (QSpinBox, QDoubleSpinBox)) and value is not None:
+                                widget.setValue(value)
+                            elif isinstance(widget, QLineEdit) and value:
+                                widget.setText(str(value))
+                            elif isinstance(widget, QCheckBox):
+                                widget.setChecked(bool(value))
         finally:
             # Re-enable signals
             self.trigger_type_combo.blockSignals(False)
@@ -365,38 +442,49 @@ class GestureEditorDialog(QDialog):
     
     def get_gesture(self) -> GestureConfig:
         """Get the edited gesture configuration"""
+        # Validate gesture name
+        gesture_name = self.name_input.text().strip()
+        if not gesture_name:
+            raise ValueError("Gesture name cannot be empty")
+        
         # Get trigger parameters
         trigger_params = {}
         for i in range(self.trigger_params_layout.rowCount()):
-            label = self.trigger_params_layout.itemAt(i, QFormLayout.ItemRole.LabelRole)
-            if label:
-                param_name = label.widget().text().rstrip(':')
-                widget = self.trigger_params_layout.itemAt(i, QFormLayout.ItemRole.FieldRole).widget()
-                
-                if isinstance(widget, QComboBox):
-                    trigger_params[param_name] = widget.currentText()
-                elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
-                    trigger_params[param_name] = widget.value()
-                elif isinstance(widget, QLineEdit):
-                    trigger_params[param_name] = widget.text()
+            label_item = self.trigger_params_layout.itemAt(i, QFormLayout.ItemRole.LabelRole)
+            if label_item and label_item.widget():
+                param_name = label_item.widget().text().rstrip(':')
+                field_item = self.trigger_params_layout.itemAt(i, QFormLayout.ItemRole.FieldRole)
+                if field_item:
+                    widget = field_item.widget()
+                    if widget:
+                        if isinstance(widget, QComboBox):
+                            trigger_params[param_name] = widget.currentText()
+                        elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+                            trigger_params[param_name] = widget.value()
+                        elif isinstance(widget, QLineEdit):
+                            trigger_params[param_name] = widget.text()
+                        elif isinstance(widget, QCheckBox):
+                            trigger_params[param_name] = widget.isChecked()
         
         # Get action parameters
         action_params = {}
         for i in range(self.action_params_layout.rowCount()):
-            label = self.action_params_layout.itemAt(i, QFormLayout.ItemRole.LabelRole)
-            if label:
-                param_name = label.widget().text().rstrip(':')
-                widget = self.action_params_layout.itemAt(i, QFormLayout.ItemRole.FieldRole).widget()
-                
-                if isinstance(widget, QComboBox):
-                    action_params[param_name] = widget.currentText()
-                elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
-                    action_params[param_name] = widget.value()
-                elif isinstance(widget, QLineEdit):
-                    action_params[param_name] = widget.text()
+            label_item = self.action_params_layout.itemAt(i, QFormLayout.ItemRole.LabelRole)
+            if label_item and label_item.widget():
+                param_name = label_item.widget().text().rstrip(':')
+                field_item = self.action_params_layout.itemAt(i, QFormLayout.ItemRole.FieldRole)
+                if field_item:
+                    widget = field_item.widget()
+                    if widget:
+                        if isinstance(widget, QComboBox):
+                            action_params[param_name] = widget.currentText()
+                        elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+                            action_params[param_name] = widget.value()
+                        elif isinstance(widget, QLineEdit):
+                            action_params[param_name] = widget.text()
         
         return GestureConfig(
-            name=self.name_input.text(),
+            name=gesture_name,
             enabled=self.enabled_checkbox.isChecked(),
             trigger=TriggerConfig(
                 type=self.trigger_type_combo.currentText(),
@@ -482,7 +570,7 @@ class ProfileEditor(QDialog):
         button_layout = QHBoxLayout()
         
         save_button = QPushButton("Save Profile")
-        save_button.clicked.connect(self.accept)
+        save_button.clicked.connect(self.validate_and_accept)
         button_layout.addWidget(save_button)
         
         cancel_button = QPushButton("Cancel")
@@ -490,6 +578,25 @@ class ProfileEditor(QDialog):
         button_layout.addWidget(cancel_button)
         
         layout.addLayout(button_layout)
+    
+    def validate_and_accept(self):
+        """Validate form data before accepting"""
+        try:
+            # Validate profile name
+            profile_name = self.name_input.text().strip()
+            if not profile_name:
+                QMessageBox.warning(self, "Validation Error", "Profile name cannot be empty.")
+                return
+            
+            # Try to get profile to validate all fields
+            self.get_profile()
+            
+            # If validation passes, accept the dialog
+            self.accept()
+        except ValueError as e:
+            QMessageBox.warning(self, "Validation Error", str(e))
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save profile: {e}")
     
     def load_profile(self):
         """Load profile data into the form"""
@@ -552,7 +659,11 @@ class ProfileEditor(QDialog):
     
     def get_profile(self) -> Profile:
         """Get the edited profile"""
-        self.profile.name = self.name_input.text()
+        profile_name = self.name_input.text().strip()
+        if not profile_name:
+            raise ValueError("Profile name cannot be empty")
+        
+        self.profile.name = profile_name
         self.profile.description = self.description_input.toPlainText()
         self.profile.game = self.game_input.text()
         return self.profile

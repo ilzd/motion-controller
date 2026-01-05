@@ -1,13 +1,14 @@
 """Main application window"""
 
 import sys
+import time
+import cv2
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                               QPushButton, QLabel, QFileDialog, QMessageBox,
                               QMenuBar, QMenu, QToolBar, QStatusBar, QCheckBox)
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QAction
 from typing import Optional
-import time
 
 from src.capture.camera_capture import CameraCapture
 from src.detection.pose_detector import PoseDetector
@@ -295,6 +296,9 @@ class MainWindow(QMainWindow):
             # Reset disconnect warning flag if camera is working
             if self._camera_disconnect_warning_shown and self.camera.is_running:
                 self._camera_disconnect_warning_shown = False
+            
+            # Flip frame horizontally for mirror-like display (more intuitive for testing)
+            frame = cv2.flip(frame, 1)
             
             # 2. Detect pose and hands
             landmarks = self.pose_detector.detect(frame)

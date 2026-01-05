@@ -22,10 +22,12 @@ class HandRaiseTrigger(BaseTrigger):
         Config parameters:
             hand: "left", "right", or "both"
             threshold: Height above shoulder (0.0-1.0, default 0.2)
+            min_visibility: Minimum landmark visibility (0.0-1.0, default 0.5)
         """
         super().__init__(config)
         self.hand = self.get_config_param("hand", "right").lower()
         self.threshold = self.get_config_param("threshold", DEFAULT_HAND_RAISE_THRESHOLD)
+        self.min_visibility = self.get_config_param("min_visibility", MIN_LANDMARK_VISIBILITY)
         
     def detect(self, landmarks: object, frame_data: Dict[str, Any]) -> bool:
         """Detect if hand is raised above shoulder"""
@@ -80,9 +82,9 @@ class HandRaiseTrigger(BaseTrigger):
         shoulder_visibility = get_landmark_visibility(landmarks, shoulder_id)
         
         # Require minimum visibility for reliable detection
-        if wrist_visibility is None or wrist_visibility < MIN_LANDMARK_VISIBILITY:
+        if wrist_visibility is None or wrist_visibility < self.min_visibility:
             return False
-        if shoulder_visibility is None or shoulder_visibility < MIN_LANDMARK_VISIBILITY:
+        if shoulder_visibility is None or shoulder_visibility < self.min_visibility:
             return False
         
         # Calculate height difference (negative because y increases downward)
