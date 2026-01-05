@@ -19,6 +19,12 @@ class BaseTrigger(ABC):
         self.previous_state: Dict[str, Any] = {}
         self.current_value = 0.0
         
+        # Debouncing: track consecutive active/inactive frames
+        self._consecutive_active_frames = 0
+        self._consecutive_inactive_frames = 0
+        self._debounce_frames = self.get_config_param("debounce_frames", 2)  # Require 2 frames for state change
+        self._debounced_active = False
+        
     @abstractmethod
     def detect(self, landmarks: object, frame_data: Dict[str, Any]) -> bool:
         """
@@ -58,6 +64,34 @@ class BaseTrigger(ABC):
         self.is_active = False
         self.previous_state.clear()
         self.current_value = 0.0
+        self._consecutive_active_frames = 0
+        self._consecutive_inactive_frames = 0
+        self._debounced_active = False
+    
+    def _apply_debouncing(self, raw_active: bool) -> bool:
+        """
+        Apply debouncing to prevent rapid state changes.
+        
+        Args:
+            raw_active: Raw detection result
+            
+        Returns:
+            Debounced active state
+        """
+        if raw_active:
+            self._consecutive_active_frames += 1
+            self._consecutive_inactive_frames = 0
+        else:
+            self._consecutive_inactive_frames += 1
+            self._consecutive_active_frames = 0
+        
+        # Only change state after debounce_frames consecutive frames
+        if self._consecutive_active_frames >= self._debounce_frames:
+            self._debounced_active = True
+        elif self._consecutive_inactive_frames >= self._debounce_frames:
+            self._debounced_active = False
+        
+        return self._debounced_active
     
     def get_config_param(self, key: str, default: Any = None) -> Any:
         """

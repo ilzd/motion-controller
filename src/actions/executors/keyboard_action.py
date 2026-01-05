@@ -58,22 +58,34 @@ class KeyboardAction(BaseAction):
         """Execute keyboard action"""
         try:
             if self.mode == "press":
-                # One-shot press (tap) - only execute once per gesture activation
-                # is_executing prevents multiple presses while gesture stays active
-                if not self.is_executing:
+                # One-shot press (tap) - execute on edge (transition from inactive to active)
+                # Track previous state to detect edge
+                if not hasattr(self, '_was_active'):
+                    self._was_active = False
+                
+                # Only execute if transitioning from inactive to active (edge detection)
+                if not self._was_active:
                     self.keyboard.press(self.key)
                     self.keyboard.release(self.key)
+                    self._was_active = True
                     self.is_executing = True
             elif self.mode == "hold":
                 # Continuous hold - only press once, release when gesture ends
                 if not self.is_executing:
                     self.keyboard.press(self.key)
                     self.is_executing = True
+                    if not hasattr(self, '_was_active'):
+                        self._was_active = True
         except Exception as e:
             print(f"Warning: Keyboard action failed for key '{self.key_str}': {e}")
             import traceback
             traceback.print_exc()
             # Don't set is_executing if it failed
+    
+    def reset_state(self):
+        """Reset internal state (called when gesture becomes inactive)"""
+        self._was_active = False
+        self.is_executing = False
     
     def release(self):
         """Release key if held"""
@@ -84,6 +96,9 @@ class KeyboardAction(BaseAction):
             print(f"Warning: Keyboard release failed: {e}")
         finally:
             self.is_executing = False
+            # Reset state for next activation
+            if hasattr(self, '_was_active'):
+                self._was_active = False
     
     def get_name(self) -> str:
         """Get action type name"""

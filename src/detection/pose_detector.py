@@ -4,6 +4,11 @@ import cv2
 import mediapipe as mp
 import numpy as np
 from typing import Optional
+from src.utils.constants import (
+    DEFAULT_MODEL_COMPLEXITY,
+    DEFAULT_MIN_DETECTION_CONFIDENCE,
+    DEFAULT_MIN_TRACKING_CONFIDENCE
+)
 
 
 class PoseDetector:
@@ -11,10 +16,10 @@ class PoseDetector:
     
     def __init__(self, 
                  static_image_mode: bool = False,
-                 model_complexity: int = 0,  # 0 = fastest, 1 = balanced, 2 = most accurate
+                 model_complexity: int = DEFAULT_MODEL_COMPLEXITY,
                  smooth_landmarks: bool = True,
-                 min_detection_confidence: float = 0.5,
-                 min_tracking_confidence: float = 0.5):
+                 min_detection_confidence: float = DEFAULT_MIN_DETECTION_CONFIDENCE,
+                 min_tracking_confidence: float = DEFAULT_MIN_TRACKING_CONFIDENCE):
         """
         Initialize MediaPipe Pose detector.
         

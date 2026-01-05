@@ -4,9 +4,11 @@ from typing import Dict, Any
 from src.recognition.base_trigger import BaseTrigger
 from src.recognition.trigger_registry import TriggerRegistry
 from src.detection.landmark_utils import (
-    get_landmark_position, 
+    get_landmark_position,
+    get_landmark_visibility,
     LandmarkIndex
 )
+from src.utils.constants import DEFAULT_HAND_RAISE_THRESHOLD, MIN_LANDMARK_VISIBILITY
 
 
 @TriggerRegistry.register("hand_raise")
@@ -23,7 +25,7 @@ class HandRaiseTrigger(BaseTrigger):
         """
         super().__init__(config)
         self.hand = self.get_config_param("hand", "right").lower()
-        self.threshold = self.get_config_param("threshold", 0.2)
+        self.threshold = self.get_config_param("threshold", DEFAULT_HAND_RAISE_THRESHOLD)
         
     def detect(self, landmarks: object, frame_data: Dict[str, Any]) -> bool:
         """Detect if hand is raised above shoulder"""
@@ -60,6 +62,8 @@ class HandRaiseTrigger(BaseTrigger):
         else:
             result = False
         
+        # Apply debouncing to prevent flickering
+        result = self._apply_debouncing(result)
         self.is_active = result
         return result
     
@@ -69,6 +73,16 @@ class HandRaiseTrigger(BaseTrigger):
         shoulder_pos = get_landmark_position(landmarks, shoulder_id)
         
         if wrist_pos is None or shoulder_pos is None:
+            return False
+        
+        # Check landmark visibility (confidence threshold)
+        wrist_visibility = get_landmark_visibility(landmarks, wrist_id)
+        shoulder_visibility = get_landmark_visibility(landmarks, shoulder_id)
+        
+        # Require minimum visibility for reliable detection
+        if wrist_visibility is None or wrist_visibility < MIN_LANDMARK_VISIBILITY:
+            return False
+        if shoulder_visibility is None or shoulder_visibility < MIN_LANDMARK_VISIBILITY:
             return False
         
         # Calculate height difference (negative because y increases downward)

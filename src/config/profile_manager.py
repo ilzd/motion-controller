@@ -31,15 +31,35 @@ class ProfileManager:
             Profile object, or None if loading failed
         """
         try:
-            with open(filepath, 'r') as f:
+            if not os.path.exists(filepath):
+                print(f"Error: Profile file not found: {filepath}")
+                return None
+            
+            with open(filepath, 'r', encoding='utf-8') as f:
                 data = yaml.safe_load(f)
+            
+            if data is None:
+                print(f"Error: Profile file is empty or invalid: {filepath}")
+                return None
             
             # Validate and create profile
             profile = Profile.from_dict(data)
+            
+            # Validate profile
+            is_valid, error_msg = self.validate_profile(profile)
+            if not is_valid:
+                print(f"Warning: Profile validation failed: {error_msg}")
+                # Still return profile but warn user
+            
             return profile
             
+        except yaml.YAMLError as e:
+            print(f"Error: Invalid YAML in profile file {filepath}: {e}")
+            return None
         except Exception as e:
             print(f"Error loading profile from {filepath}: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def save_profile(self, profile: Profile, filepath: str) -> bool:
@@ -57,10 +77,15 @@ class ProfileManager:
             # Ensure directory exists
             Path(filepath).parent.mkdir(parents=True, exist_ok=True)
             
+            # Validate before saving
+            is_valid, error_msg = self.validate_profile(profile)
+            if not is_valid:
+                raise ValueError(f"Cannot save invalid profile: {error_msg}")
+            
             # Convert to dict and save
             data = profile.to_dict()
-            with open(filepath, 'w') as f:
-                yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+            with open(filepath, 'w', encoding='utf-8') as f:
+                yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
             
             return True
             

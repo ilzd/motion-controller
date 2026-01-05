@@ -4,6 +4,7 @@ from typing import Dict, Any
 import vgamepad as vg
 from src.actions.base_action import BaseAction
 from src.actions.action_registry import ActionRegistry
+from src.utils.constants import GAMEPAD_STICK_MAX_VALUE, GAMEPAD_TRIGGER_MAX_VALUE
 
 
 @ActionRegistry.register("gamepad")
@@ -60,45 +61,55 @@ class GamepadAction(BaseAction):
         
     def execute(self, trigger_value: float):
         """Execute gamepad action"""
-        if not self.is_executing:
+        try:
             if self.control in self.BUTTONS:
-                # Button press
-                self.gamepad.press_button(self.BUTTONS[self.control])
-                self.gamepad.update()
+                # Button press - only execute once
+                if not self.is_executing:
+                    self.gamepad.press_button(self.BUTTONS[self.control])
+                    self.gamepad.update()
+                    self.is_executing = True
                 
             elif self.control == "left_stick_x":
-                # Scale value (-1.0 to 1.0) to vgamepad range (-32768 to 32767)
-                scaled_value = int(self.value * trigger_value * 32767)
+                # Analog stick - update continuously
+                scaled_value = int(self.value * trigger_value * GAMEPAD_STICK_MAX_VALUE)
                 self.gamepad.left_joystick(x_value=scaled_value, y_value=0)
                 self.gamepad.update()
+                self.is_executing = True
                 
             elif self.control == "left_stick_y":
-                scaled_value = int(self.value * trigger_value * 32767)
+                scaled_value = int(self.value * trigger_value * GAMEPAD_STICK_MAX_VALUE)
                 self.gamepad.left_joystick(x_value=0, y_value=scaled_value)
                 self.gamepad.update()
+                self.is_executing = True
                 
             elif self.control == "right_stick_x":
-                scaled_value = int(self.value * trigger_value * 32767)
+                scaled_value = int(self.value * trigger_value * GAMEPAD_STICK_MAX_VALUE)
                 self.gamepad.right_joystick(x_value=scaled_value, y_value=0)
                 self.gamepad.update()
+                self.is_executing = True
                 
             elif self.control == "right_stick_y":
-                scaled_value = int(self.value * trigger_value * 32767)
+                scaled_value = int(self.value * trigger_value * GAMEPAD_STICK_MAX_VALUE)
                 self.gamepad.right_joystick(x_value=0, y_value=scaled_value)
                 self.gamepad.update()
+                self.is_executing = True
                 
             elif self.control == "left_trigger":
-                # Scale 0.0-1.0 to 0-255
-                scaled_value = int(self.value * trigger_value * 255)
+                # Analog trigger - update continuously
+                scaled_value = int(self.value * trigger_value * GAMEPAD_TRIGGER_MAX_VALUE)
                 self.gamepad.left_trigger(scaled_value)
                 self.gamepad.update()
+                self.is_executing = True
                 
             elif self.control == "right_trigger":
-                scaled_value = int(self.value * trigger_value * 255)
+                scaled_value = int(self.value * trigger_value * GAMEPAD_TRIGGER_MAX_VALUE)
                 self.gamepad.right_trigger(scaled_value)
                 self.gamepad.update()
-            
-            self.is_executing = True
+                self.is_executing = True
+        except Exception as e:
+            print(f"Warning: Gamepad action failed for control '{self.control}': {e}")
+            import traceback
+            traceback.print_exc()
     
     def release(self):
         """Release gamepad control"""

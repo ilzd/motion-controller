@@ -64,8 +64,13 @@ class GestureEngine:
                 gesture_def = GestureDefinition(name, trigger, action)
                 self.gestures.append(gesture_def)
                 
+            except KeyError as e:
+                print(f"Error: Failed to load gesture '{gesture_config.get('name', 'unknown')}': "
+                      f"Missing required field: {e}")
             except Exception as e:
                 print(f"Warning: Failed to load gesture '{gesture_config.get('name', 'unknown')}': {e}")
+                import traceback
+                traceback.print_exc()
     
     def process(self, landmarks: object, additional_data: Optional[Dict[str, Any]] = None) -> List[Tuple[str, BaseAction, bool, float]]:
         """

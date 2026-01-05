@@ -52,17 +52,28 @@ class MouseAction(BaseAction):
                 
         elif self.action_type == "move":
             # Move mouse (can use trigger_value for analog control)
-            if self.relative:
-                # Relative movement
-                dx = int((self.x - 0.5) * 20 * trigger_value)
-                dy = int((self.y - 0.5) * 20 * trigger_value)
-                self.mouse.move(dx, dy)
-            else:
-                # Absolute position (requires screen size)
-                # For now, just do relative movement
-                # TODO: Implement absolute positioning with screen dimensions
-                pass
-            self.is_executing = True
+            try:
+                if self.relative:
+                    # Relative movement
+                    dx = int((self.x - 0.5) * 20 * trigger_value)
+                    dy = int((self.y - 0.5) * 20 * trigger_value)
+                    self.mouse.move(dx, dy)
+                else:
+                    # Absolute position (requires screen size)
+                    # Get screen dimensions for absolute positioning
+                    try:
+                        screen_width, screen_height = self.mouse.screen_size
+                        abs_x = int(self.x * screen_width)
+                        abs_y = int(self.y * screen_height)
+                        self.mouse.position = (abs_x, abs_y)
+                    except AttributeError:
+                        # Fallback to relative movement if screen_size not available
+                        dx = int((self.x - 0.5) * 20 * trigger_value)
+                        dy = int((self.y - 0.5) * 20 * trigger_value)
+                        self.mouse.move(dx, dy)
+                self.is_executing = True
+            except Exception as e:
+                print(f"Warning: Mouse move failed: {e}")
     
     def release(self):
         """Release mouse button if held"""

@@ -172,6 +172,10 @@ class GestureEditorDialog(QDialog):
         elif trigger_type == "pose_hold":
             self.add_trigger_param("duration_ms", QSpinBox(), (100, 10000, 1000))
             # Note: Nested trigger not supported in simple editor
+        elif trigger_type == "hand_gesture":
+            self.add_trigger_param("hand", QComboBox(), ["right", "left", "both"])
+            self.add_trigger_param("gesture", QComboBox(), ["open", "closed"])
+            self.add_trigger_param("confidence", QDoubleSpinBox(), (0.0, 1.0, 0.7))
         
         # Update content widget size
         self.update_content_size()

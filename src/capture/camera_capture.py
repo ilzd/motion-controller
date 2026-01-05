@@ -3,12 +3,17 @@
 import cv2
 import numpy as np
 from typing import Optional, Tuple
+from src.utils.constants import (
+    DEFAULT_CAMERA_ID,
+    DEFAULT_CAMERA_RESOLUTION,
+    DEFAULT_CAMERA_FPS
+)
 
 
 class CameraCapture:
     """Handles webcam video capture using OpenCV"""
     
-    def __init__(self, camera_id: int = 0, resolution: Tuple[int, int] = (640, 480)):
+    def __init__(self, camera_id: int = DEFAULT_CAMERA_ID, resolution: Tuple[int, int] = DEFAULT_CAMERA_RESOLUTION):
         """
         Initialize camera capture.
         
@@ -40,8 +45,8 @@ class CameraCapture:
         self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
         self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
         
-        # Set FPS to 30
-        self.capture.set(cv2.CAP_PROP_FPS, 30)
+        # Set FPS
+        self.capture.set(cv2.CAP_PROP_FPS, DEFAULT_CAMERA_FPS)
         
         self.is_running = True
         return True
@@ -63,12 +68,28 @@ class CameraCapture:
         if not self.is_running or self.capture is None:
             return None
         
-        ret, frame = self.capture.read()
-        
-        if not ret:
+        try:
+            ret, frame = self.capture.read()
+            
+            if not ret or frame is None:
+                # Camera may have disconnected - check if still opened
+                if not self.capture.isOpened():
+                    self.is_running = False
+                    self.capture = None
+                return None
+            
+            return frame
+        except Exception as e:
+            # Handle camera errors (disconnection, etc.)
+            print(f"Warning: Camera error: {e}")
+            self.is_running = False
+            if self.capture is not None:
+                try:
+                    self.capture.release()
+                except:
+                    pass
+                self.capture = None
             return None
-        
-        return frame
     
     def get_frame_size(self) -> Optional[Tuple[int, int]]:
         """

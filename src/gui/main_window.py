@@ -3,7 +3,7 @@
 import sys
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                               QPushButton, QLabel, QFileDialog, QMessageBox,
-                              QMenuBar, QMenu, QToolBar, QStatusBar)
+                              QMenuBar, QMenu, QToolBar, QStatusBar, QCheckBox)
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QAction
 from typing import Optional
@@ -11,6 +11,7 @@ import time
 
 from src.capture.camera_capture import CameraCapture
 from src.detection.pose_detector import PoseDetector
+from src.detection.hand_detector import HandDetector
 from src.recognition.gesture_engine import GestureEngine
 from src.actions.action_dispatcher import ActionDispatcher
 from src.config.profile_manager import ProfileManager
@@ -29,6 +30,7 @@ class MainWindow(QMainWindow):
         # Initialize components
         self.camera = CameraCapture()
         self.pose_detector = PoseDetector()
+        self.hand_detector = HandDetector(max_num_hands=2)  # Detect both hands
         self.gesture_engine = GestureEngine()
         self.action_dispatcher = ActionDispatcher()
         self.profile_manager = ProfileManager()
@@ -39,11 +41,13 @@ class MainWindow(QMainWindow):
         self.frame_count = 0
         self.fps = 0.0
         self.last_fps_update = time.time()
+        self._camera_disconnect_warning_shown = False  # Prevent multiple disconnect dialogs
         
         # Setup UI
         self.setup_ui()
         
-        # Setup processing timer (30 FPS = ~33ms)
+        # Setup processing timer
+        from src.utils.constants import PROCESSING_TIMER_INTERVAL_MS
         self.processing_timer = QTimer()
         self.processing_timer.timeout.connect(self.process_frame)
         
@@ -80,6 +84,7 @@ class MainWindow(QMainWindow):
         
         self.camera_widget = CameraWidget()
         self.camera_widget.set_pose_detector(self.pose_detector)
+        self.camera_widget.set_hand_detector(self.hand_detector)
         left_layout.addWidget(self.camera_widget)
         
         # Right panel - Control panel (40% width)
@@ -110,6 +115,26 @@ class MainWindow(QMainWindow):
         
         self.status_label = QLabel("Camera: Stopped")
         right_layout.addWidget(self.status_label)
+        
+        # Skeleton visibility controls
+        skeleton_label = QLabel("Skeleton Overlay")
+        skeleton_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        right_layout.addWidget(skeleton_label)
+        
+        # Pose skeleton checkbox
+        self.show_pose_checkbox = QCheckBox("Show Pose Skeleton")
+        self.show_pose_checkbox.setChecked(True)
+        self.show_pose_checkbox.toggled.connect(self.on_pose_skeleton_toggled)
+        right_layout.addWidget(self.show_pose_checkbox)
+        
+        # Hand skeleton checkbox
+        self.show_hand_checkbox = QCheckBox("Show Hand Skeleton")
+        self.show_hand_checkbox.setChecked(True)
+        self.show_hand_checkbox.toggled.connect(self.on_hand_skeleton_toggled)
+        right_layout.addWidget(self.show_hand_checkbox)
+        
+        # Add stretch to push everything to top
+        right_layout.addStretch()
         
         # Add panels to main layout with stretch factors
         main_layout.addWidget(left_panel, 60)
@@ -204,15 +229,30 @@ class MainWindow(QMainWindow):
             self.status_label.setText("Camera: Running")
             self.status_bar.showMessage("Camera started")
             
+            # Reset processing state
+            self.is_processing = False
+            self.frame_count = 0
+            self.frame_skip_counter = 0
+            self.last_fps_update = time.time()
+            
             # Prevent keyboard shortcuts from interfering with actions
             # Focus on the camera widget so buttons don't get keyboard events
             self.camera_widget.setFocus()
             
-            # Start processing timer (30 FPS = ~33ms)
-            self.processing_timer.start(33)
+            # Start processing timer
+            from src.utils.constants import PROCESSING_TIMER_INTERVAL_MS
+            self.processing_timer.start(PROCESSING_TIMER_INTERVAL_MS)
         else:
-            QMessageBox.critical(self, "Camera Error", 
-                               "Failed to start camera. Please check your webcam.")
+            QMessageBox.critical(
+                self, 
+                "Camera Error", 
+                "Failed to start camera.\n\n"
+                "Possible causes:\n"
+                "- Camera is already in use by another application\n"
+                "- Camera is not connected\n"
+                "- No camera permissions granted\n\n"
+                "Please check your webcam and try again."
+            )
     
     def stop_camera(self):
         """Stop camera and processing"""
@@ -240,20 +280,41 @@ class MainWindow(QMainWindow):
             # 1. Capture frame
             frame = self.camera.get_frame()
             if frame is None:
+                # Camera may have disconnected
+                if not self.camera.is_running and not self._camera_disconnect_warning_shown:
+                    self._camera_disconnect_warning_shown = True
+                    self.stop_camera()
+                    QMessageBox.warning(
+                        self,
+                        "Camera Disconnected",
+                        "Camera was disconnected. Please reconnect and restart."
+                    )
                 self.is_processing = False
                 return
             
-            # 2. Detect pose
+            # Reset disconnect warning flag if camera is working
+            if self._camera_disconnect_warning_shown and self.camera.is_running:
+                self._camera_disconnect_warning_shown = False
+            
+            # 2. Detect pose and hands
             landmarks = self.pose_detector.detect(frame)
+            hands = self.hand_detector.detect(frame)
             
             # 3. Recognize gestures and execute actions
+            # Prepare frame data with both pose and hands for triggers that need hand data
+            frame_data = {
+                "hands": hands,
+                "frame": frame
+            }
+            
             if landmarks is not None:
                 try:
-                    active_gestures = self.gesture_engine.process(landmarks)
+                    active_gestures = self.gesture_engine.process(landmarks, frame_data)
                     self.action_dispatcher.dispatch(active_gestures)
                     
-                    # Update gesture monitor (only every 2nd frame for performance)
-                    if self.frame_count % 2 == 0:
+                    # Update gesture monitor (throttled for performance)
+                    from src.utils.constants import GESTURE_MONITOR_UPDATE_INTERVAL
+                    if self.frame_count % GESTURE_MONITOR_UPDATE_INTERVAL == 0:
                         self.gesture_monitor.update_status(active_gestures)
                 except Exception as e:
                     print(f"Warning: Error processing gestures: {e}")
@@ -266,8 +327,8 @@ class MainWindow(QMainWindow):
                 except Exception as e:
                     print(f"Warning: Error releasing actions: {e}")
             
-            # 4. Update GUI (only every frame for smooth video, but skip drawing if too slow)
-            self.camera_widget.update_frame(frame, landmarks)
+            # 4. Update GUI with pose and hands
+            self.camera_widget.update_frame(frame, landmarks, hands)
             
             # Update FPS
             self.frame_count += 1
@@ -275,8 +336,15 @@ class MainWindow(QMainWindow):
             if current_time - self.last_fps_update >= 1.0:
                 self.fps = self.frame_count / (current_time - self.last_fps_update)
                 self.fps_label.setText(f"FPS: {self.fps:.1f}")
+                from src.utils.constants import MAX_FRAME_SKIP_COUNT
                 if self.frame_skip_counter > 0:
-                    self.status_bar.showMessage(f"FPS: {self.fps:.1f} (Skipped {self.frame_skip_counter} frames)")
+                    if self.frame_skip_counter > MAX_FRAME_SKIP_COUNT:
+                        self.status_bar.showMessage(
+                            f"FPS: {self.fps:.1f} (Warning: Skipped {self.frame_skip_counter} frames - performance degraded)",
+                            5000  # Show for 5 seconds
+                        )
+                    else:
+                        self.status_bar.showMessage(f"FPS: {self.fps:.1f} (Skipped {self.frame_skip_counter} frames")
                 self.frame_count = 0
                 self.frame_skip_counter = 0
                 self.last_fps_update = current_time
@@ -403,6 +471,14 @@ class MainWindow(QMainWindow):
             "<p>Built with MediaPipe, OpenCV, and PyQt6</p>"
         )
     
+    def on_pose_skeleton_toggled(self, checked: bool):
+        """Handle pose skeleton visibility toggle"""
+        self.camera_widget.set_show_pose_skeleton(checked)
+    
+    def on_hand_skeleton_toggled(self, checked: bool):
+        """Handle hand skeleton visibility toggle"""
+        self.camera_widget.set_show_hand_skeleton(checked)
+    
     def closeEvent(self, event):
         """Handle window close event"""
         if self.is_running:
@@ -410,6 +486,7 @@ class MainWindow(QMainWindow):
         
         # Cleanup
         self.pose_detector.close()
+        self.hand_detector.close()
         
         event.accept()
 
